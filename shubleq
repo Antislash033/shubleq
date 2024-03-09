@@ -1,0 +1,82 @@
+#!/bin/sh
+
+shubleq_get() {
+	printf "%d" $(printf "%s" "$content" | cut -d " " -f $(($1+1)))
+}
+
+shubleq_replace() {
+	if test $1 -ne 0
+		then tempcontent="$(printf "%s" "$content" | cut -d ' ' -f-$1) "
+		else tempcontent=""
+	fi
+	content="$tempcontent$2 $(printf "%s" "$content" | cut -d ' ' -f$(($1+2))-)"
+}
+
+shubleq_parse_labels() {
+	for label in $(printf "%s" "$content" | grep -o "[A-Za-z_][A-Za-z_]*:"); do
+		if $debugging; then
+			printf "Replacing label %s\n" "$label"
+			printf "Before: %s\n" "$content"
+		fi
+		position=$(printf "%s" "$content" | sed s/^$label.*// | sed s/\ $label.*/\ / | sed s/[A-Za-z_][A-Za-z_]*://g | tr -s " " | tr -dc " " | wc -c)
+		content=$(printf "%s" "$content" | sed s/^$label// | sed s/\ $label/\ /g | sed s/$(printf "%s" "$label" | sed 's/://')/$position/g | tr -s " ")
+		if $debugging; then printf " After: %s\n-----\n" "$content"; fi
+	done
+}
+
+index=0
+input=""
+debugging="false"
+labels="false"
+while test "$filename" = ""; do
+	case "$1" in
+		"--debug") debugging="true";;
+		"--labels") labels="true";;
+		"") printf "%s\n" "usage: shubleq [--labels] [--debug] FILE_NAME"; exit 0;;
+		*) filename="$1";;
+	esac
+	shift
+done
+content=$(cat "$filename" | tr -c "0-9A-Za-z_: \-" " " | tr -s " ")
+if test "$(printf "%s" "$content" | cut -d " " -f 1)" = ""
+	then content="$(printf "%s" "$content" | cut -d " " -f 2-)"
+fi
+if $labels; then shubleq_parse_labels; fi
+content=$(printf "%s" "$content" | tr -c "0-9 \-" " " | tr -s " ")
+while true; do
+	pt1=$(shubleq_get $index)
+	pt2=$(shubleq_get $((index+1)))
+	pt3=$(shubleq_get $((index+2)))
+	
+	if $debugging; then
+		printf "%s\n" "$content"
+		printf "@%d: [%d %d %d]\n" $index $pt1 $pt2 $pt3
+	fi
+	
+	if test $pt1 -lt 0; then
+		printf "%s" "[Input]: "
+		while test "$input" = ""
+		do read -r input; done
+		val1=$(printf "%d" "'$input");
+		val1=$((-val1))
+		input=$(printf "%s" "$input" | cut -c2-)
+	else val1=$(shubleq_get $pt1); fi
+	
+	if test $pt2 -lt 0
+		then printf "\\$(printf "%o" "$val1")"
+		index=$((index+3))
+		if $debugging; then printf "\n%s\n" "-----"; fi
+		continue
+	fi
+	
+	val2=$(shubleq_get $pt2)
+	shubleq_replace $pt2 $((val2-val1))
+	
+	val2=$(shubleq_get $pt2)
+	if test $val2 -le 0; then
+		index=$pt3
+		if test $index -lt 0; then exit 0; fi
+	else index=$((index+3)); fi
+	
+	if $debugging; then printf "%s\n" "-----"; fi
+done
